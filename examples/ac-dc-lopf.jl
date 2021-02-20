@@ -4,6 +4,7 @@
 import PSA
 
 using Clp
+using JuMP
 
 network = PSA.import_network("/home/tom/fias/lib/pypsa/examples/ac-dc-meshed/ac-dc-data/")
 
@@ -11,6 +12,6 @@ solver = Clp.Optimizer
 
 m = PSA.lopf(network, solver)
 
-print(m.objVal)
+println(objective_value(m))
 
-print(network.generators_t["p"])
+println(network.generators_t["p"])
