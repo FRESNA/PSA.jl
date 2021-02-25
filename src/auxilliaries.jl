@@ -1,11 +1,11 @@
 using LightGraphs
 using PyCall
 const networkx = PyNULL()
-copy!(networkx, pyimport("networkx" ))
+copy!(networkx, pyimport("networkx"))
 
 
 function time_dependent_components(network)
-    fields = String.(fieldnames(network))
+    fields = String.(fieldnames(typeof(network)))
     components = []
     for field=fields
         if field[end-1:end] == "_t"
@@ -16,7 +16,7 @@ function time_dependent_components(network)
 end
 
 function static_components(network)
-    fields = String.(fieldnames(network))
+    fields = String.(fieldnames(typeof(network)))
     components = []
     for field=fields
         if field[end-1:end] != "_t"
@@ -41,9 +41,9 @@ end
 function align_component_order!(network)
     components_t = time_dependent_components(network)
     for comp=components_t
-        order = Symbol.(getfield(network, Symbol(String(comp)[1:end-2]))[:name])
+        order = Symbol.(getfield(network, Symbol(String(comp)[1:end-2]))[!, :name])
         for attr in keys(getfield(network, comp))
-            if length(getfield(network,comp)[attr])==length(order)
+            if nrow(getfield(network,comp)[attr])==length(order)
                 getfield(network,comp)[attr]= getfield(network,comp)[attr][:, order]
             end
         end
@@ -51,16 +51,16 @@ function align_component_order!(network)
 end
 
 # auxilliary funcitons
-idx(dataframe) = Dict(zip(dataframe[:name], Iterators.countfrom(1)))
-rev_idx(dataframe) = Dict(zip(Iterators.countfrom(1), dataframe[:name]))
-idx_by(dataframe, col, values) = select_by(dataframe, col, values)[:idx]
+idx(dataframe) = Dict(zip(dataframe[!, :name], Iterators.countfrom(1)))
+rev_idx(dataframe) = Dict(zip(Iterators.countfrom(1), dataframe[!, :name]))
+idx_by(dataframe, col, values) = select_by(dataframe, col, values)[!, :idx]
 
 function select_by(dataframe, col, selector)
-    if length(findin(dataframe[col], selector))==0
+    if length(findall(in(selector), dataframe[!, col]))==0
         return dataframe[repeat(Bool[false],outer=nrow(dataframe)) , :]
     else
-        mdict = Dict(zip(dataframe[col], Iterators.countfrom(1)))
-        ids = Array{Int,1}(0)
+        mdict = Dict(zip(dataframe[!, col], Iterators.countfrom(1)))
+        ids = Array{Int,1}()
         for i in selector
             push!(ids, mdict[i])
         end
@@ -73,10 +73,10 @@ select_names(a, b) = select_by(a, :name, b)
 function append_idx_col!(dataframe)
     if typeof(dataframe)==Vector{DataFrames.DataFrame}
         for df in dataframe
-            df[:idx] = collect(1:nrow(df))
+            df[!, :idx] = collect(1:nrow(df))
         end
     else
-        dataframe[:idx] = collect(1:nrow(dataframe))
+        dataframe[!, :idx] = collect(1:nrow(dataframe))
     end
 end
 
@@ -89,16 +89,16 @@ function get_switchable_as_dense(network, component, attribute, snapshots=0)
     if in(attribute, keys(getfield(network, component_t)))
         dense = getfield(network, component_t)[attribute]
     end
-    cols = Symbol.(getfield(network, component)[:name])
+    cols = Symbol.(getfield(network, component)[!, :name])
     not_included = String.(setdiff(cols, names(dense)))
     if length(not_included)>0
         attribute = Symbol.(attribute)
         df = select_names(getfield(network, component), not_included)
-        df = names!(DataFrame(repmat(transpose(Array(df[attribute])), T)),
+        df = rename!(DataFrame(repeat(transpose(Array(df[!, attribute])), T)),
                 Symbol.(not_included))
         dense = [dense df]
     end
-    return dense[cols]
+    return dense[!, cols]
 end
 
 
@@ -128,7 +128,7 @@ end
 
 function calculate_dependent_values!(network)
     function set_default(dataframe, col, default)
-        !in(col, names(dataframe)) ? dataframe[col] = default : nothing
+        !(col in propertynames(dataframe)) ? insertcols!(dataframe, col .=> default) : nothing
     end
 
     #buses
@@ -138,7 +138,7 @@ function calculate_dependent_values!(network)
     end
 
     # generators
-    defaults = [(:p_nom_extendable, false), (:p_nom_max, Inf),(:commitable, false),
+    defaults = [(:p_nom_extendable, false), (:committable, false),
                 (:p_min_pu, 0), (:p_max_pu, 1), (:p_nom_min, 0),(:capital_cost, 0),
                 (:min_up_time, 0), (:min_down_time, 0), (:initial_status, true),
                 (:p_nom, 0.),(:marginal_cost, 0),(:p_nom_opt, 0.)]
@@ -147,16 +147,18 @@ function calculate_dependent_values!(network)
     end
 
     # lines
-    network.lines[:v_nom]=select_names(network.buses, network.lines[:bus0])[:v_nom]
+    network.lines[!, :v_nom]=select_names(network.buses, network.lines[!, :bus0])[!, :v_nom]
     defaults = [(:s_nom_extendable, false), (:s_nom_min, 0),(:s_nom_max, Inf), (:s_nom, 0.),
                 (:s_nom_min, 0), (:s_nom_max, Inf), (:capital_cost, 0), (:g, 0)]
     for (col, default) in defaults
         set_default(network.lines, col, default)
     end
-    network.lines[:x_pu] = network.lines[:x]./(network.lines[:v_nom].^2)
-    network.lines[:r_pu] = network.lines[:r]./(network.lines[:v_nom].^2)
-    network.lines[:b_pu] = network.lines[:b].*network.lines[:v_nom].^2
-    network.lines[:g_pu] = network.lines[:g].*network.lines[:v_nom].^2
+    pu(a, b) = a ./ b.^2
+    pu_inverse(a, b) = a .* b.^2
+    transform!(network.lines, [:x, :v_nom] => pu => :x_pu)
+    transform!(network.lines, [:r, :v_nom] => pu => :r_pu)
+    transform!(network.lines, [:b, :v_nom] => pu_inverse => :b_pu)
+    transform!(network.lines, [:g, :v_nom] => pu_inverse => :g_pu)
 
     # links
     defaults = [(:p_nom_extendable, false), (:p_nom_max, Inf), (:p_min_pu, 0),
@@ -187,7 +189,7 @@ function calculate_dependent_values!(network)
     # loads_t
     for df_name=keys(network.loads_t)
         if nrow(network.loads_t[df_name])>1
-            for bus=[bus for bus in network.loads[:name] if
+            for bus=[bus for bus in network.loads[!, :name] if
                 !in(Symbol(bus), names(network.loads_t[df_name]))]
                 set_default(network.loads_t[df_name], bus, 0)
             end
@@ -238,6 +240,7 @@ function ptdf_matrix(network)
 end
 
 function get_cycles(network)
+    copy!(networkx, pyimport("networkx"))
     busidx = idx(network.buses)
     g = networkx[:Graph]()
     g[:add_nodes_from](busidx)

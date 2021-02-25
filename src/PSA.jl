@@ -146,14 +146,15 @@ function import_network(folder)
     !ispath("$folder") ? error("Path not existent") : nothing
     components = static_components(network)
     for component=components
-        if ispath("$folder/$component.csv")
+        componentpath = joinpath("$folder", "$component.csv")
+        if ispath(componentpath)
             # fallback for missing values
             try
-                setfield!(network,component,CSV.read("$folder/$component.csv"; truestring="True",
-                                                    falsestring="False"))
+                setfield!(network,component,CSV.read(componentpath, DataFrame; truestrings=["True"],
+                                                    falsestrings=["False"]))
             catch y
                 if (typeof(y)==Missings.MissingException) | (typeof(y) == BoundsError)
-                    setfield!(network,component,readtable("$folder/$component.csv"; truestrings=["True"],
+                    setfield!(network,component,readtable(componentpath; truestrings=["True"],
                                                     falsestrings=["False"]))
 
                 end
@@ -164,7 +165,7 @@ function import_network(folder)
         for name in names(df)
             if name == :name
                 nothing
-            elseif typeof(df[name]) == Array{Union{Int64, Missings.Missing},1}
+            elseif typeof(df[!, name]) == Array{Union{Int64, Missings.Missing},1}
                 println("converting column $name of $component from Int to Float")
                 df[name] = float(df[name])
             end
@@ -178,7 +179,7 @@ function import_network(folder)
                 # fallback for missing values for a non-null column type, might be deprecated soon
                 try
                     getfield(network,component_t)[attr]= (
-                    CSV.read("$folder/$component-$attr.csv"; truestring="True", falsestring="False") )
+                    CSV.read("$folder/$component-$attr.csv"; truestrings=["True"], falsestrings=["False"]) )
                 catch y
                     if (typeof(y)==Missings.MissingException) | (typeof(y) == BoundsError)
                         getfield(network,component_t)[attr]= (
@@ -189,7 +190,7 @@ function import_network(folder)
         end
     end
     initializer = Network()
-    for field=setdiff(fieldnames(network), fieldnames(initializer))
+    for field=setdiff(fieldnames(typeof(network)), fieldnames(typeof(initializer)))
         setfield!(network, field, getfield(initializer, field))
     end
     return network
