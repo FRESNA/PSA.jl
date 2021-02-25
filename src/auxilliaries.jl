@@ -41,9 +41,9 @@ end
 function align_component_order!(network)
     components_t = time_dependent_components(network)
     for comp=components_t
-        order = Symbol.(getfield(network, Symbol(String(comp)[1:end-2]))[:name])
+        order = Symbol.(getfield(network, Symbol(String(comp)[1:end-2]))[!, :name])
         for attr in keys(getfield(network, comp))
-            if length(getfield(network,comp)[attr])==length(order)
+            if nrow(getfield(network,comp)[attr])==length(order)
                 getfield(network,comp)[attr]= getfield(network,comp)[attr][:, order]
             end
         end

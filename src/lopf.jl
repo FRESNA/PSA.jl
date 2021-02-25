@@ -80,7 +80,7 @@ function lopf(network, solver)
     p_min_pu = select_time_dep(network, "generators", "p_min_pu",components=ext_gens_b)
     p_max_pu = select_time_dep(network, "generators", "p_max_pu",components=ext_gens_b)
     p_nom_min = network.generators[ext_gens_b,:p_nom_min]
-    p_nom_max = network.generators[ext_gens_b,:p_nom]
+    p_nom_max = ones(length(p_nom_min)) * Inf64
 
     @variable m G_ext[gr=1:N_ext,t = 1:T]
 
@@ -435,17 +435,17 @@ function lopf(network, solver)
     if termination_status(m)==MOI.OPTIMAL
         orig_gen_order = network.generators[!, :name]
         generators[!, :p_nom_opt] = deepcopy(generators[!, :p_nom])
-        generators[ext_gens_b,:p_nom_opt] = getvalue(gen_p_nom)
+        generators[ext_gens_b,:p_nom_opt] = value.(gen_p_nom)
         network.generators = generators
-        network.generators_t["p"] = rename!(DataFrame(transpose(getvalue(G))), Symbol.(generators[!, :name]))
+        network.generators_t["p"] = rename!(DataFrame(transpose(value.(G))), Symbol.(generators[!, :name]))
         network.generators = select_names(network.generators, orig_gen_order)
 
 
         orig_line_order = network.lines[!, :name]
         network.lines = lines
-        lines[:s_nom_opt] = deepcopy(lines[!, :s_nom])
-        network.lines[ext_lines_b,:s_nom_opt] = getvalue(LN_s_nom)
-        network.lines_t["p0"] = rename!(DataFrame(transpose(getvalue(LN))), Symbol.(lines[!, :name]))
+        lines[!, :s_nom_opt] = deepcopy(lines[!, :s_nom])
+        network.lines[ext_lines_b,:s_nom_opt] = value.(LN_s_nom)
+        network.lines_t["p0"] = rename!(DataFrame(transpose(value.(LN))), Symbol.(lines[!, :name]))
         network.lines = select_names(network.lines, orig_line_order)
 
         # network.buses_t["p"] =  DataFrame(ncols=nrow(network.buses))
@@ -453,9 +453,9 @@ function lopf(network, solver)
         if nrow(links)>0
             orig_link_order = network.links[!, :name]
             network.links = links
-            links[:p_nom_opt] = deepcopy(links[!, :p_nom])
-            network.links[ext_links_b,:p_nom_opt] = getvalue(LK_p_nom)
-            network.links_t["p0"] = rename!(DataFrame(transpose(getvalue(LK))), Symbol.(links[!, :name]))
+            links[!, :p_nom_opt] = deepcopy(links[!, :p_nom])
+            network.links[ext_links_b,:p_nom_opt] = value.(LK_p_nom)
+            network.links_t["p0"] = rename!(DataFrame(transpose(value.(LK))), Symbol.(links[!, :name]))
             network.links = select_names(network.links, orig_link_order)
 
         end
@@ -463,21 +463,21 @@ function lopf(network, solver)
             orig_sus_order = network.storage_units[!, :name]
             network.storage_units = storage_units
 
-            storage_units[:p_nom_opt] = deepcopy(storage_units[!, :p_nom])
-            network.storage_units[ext_sus_b,:p_nom_opt] = getvalue(SU_p_nom)
+            storage_units[!, :p_nom_opt] = deepcopy(storage_units[!, :p_nom])
+            network.storage_units[ext_sus_b,:p_nom_opt] = value.(SU_p_nom)
             # network.storage_units_t["spill"] = spillage
             # network.storage_units_t["spill"][:,spill_sus_b] = names!(DataFrame(transpose(getvalue(SU_spill))),
             #                     names(spillage)[spill_sus_b])
-            network.storage_units_t["spill"] = rename!(DataFrame(transpose(getvalue(SU_spill))),
+            network.storage_units_t["spill"] = rename!(DataFrame(transpose(value.(SU_spill))),
                                 Symbol.(storage_units[!, :name]))
-            network.storage_units_t["p"] = rename!(DataFrame(transpose(getvalue(SU_dispatch .- SU_store))),
+            network.storage_units_t["p"] = rename!(DataFrame(transpose(value.(SU_dispatch .- SU_store))),
                                 Symbol.(storage_units[!, :name]))
-            network.storage_units_t["state_of_charge"] = rename!(DataFrame(transpose(getvalue(SU_soc))),
+            network.storage_units_t["state_of_charge"] = rename!(DataFrame(transpose(value.(SU_soc))),
                                 Symbol.(storage_units[!, :name]))
             network.storage_units = select_names(network.storage_units, orig_sus_order)
         end
         align_component_order!(network)
-        println("Reduce cost to $(m.objVal)")
+        println("Reduce cost to $(objective_value(m))")
     end
     return m
 end
